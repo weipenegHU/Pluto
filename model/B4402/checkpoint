@@ -1,0 +1,2 @@
+model_checkpoint_path: "epitope_presentation_model.ckpt"
+all_model_checkpoint_paths: "epitope_presentation_model.ckpt"
