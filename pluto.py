@@ -20,34 +20,6 @@ def generate_batch(ms, decoy, decoy_batch_size):
 
 def model(inputs, is_training, name):
     with tf.variable_scope(name, "cnn"):
-        # conv1_fmaps = 64
-        # conv1_ksize = 5
-        # conv1_stride = 1
-        # conv1_pad = "VALID"
-        #
-        # pool1_size = 3
-        # pool1_stride = 1
-        # #
-        # # conv2_fmaps = 32
-        # # conv2_ksize = 4
-        # # conv2_stride = 1
-        # # conv2_pad = "VALID"
-        # # #
-        # # pool2_size = 3
-        # # pool2_stride = 1
-        # #
-        # conv1 = tf.layers.conv1d(inputs, filters=conv1_fmaps, kernel_size=conv1_ksize, strides=conv1_stride,
-        #                          kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32),
-        #                          padding=conv1_pad, activation=tf.nn.elu, name=name + "_conv1")
-        # conv1_flat = tf.reshape(conv1, shape=[-1, conv1_fmaps*(15 - conv1_ksize + 1)])
-        # pool1 = tf.layers.max_pooling1d(conv1, pool_size=pool1_size, padding="VALID", strides=pool1_stride, name=name + "_pool1")
-        # pool1_flat = tf.reshape(pool1, shape=[-1, conv1_fmaps*9])
-        # # conv2 = tf.layers.conv1d(pool1, filters=conv2_fmaps, kernel_size=conv2_ksize, strides=conv2_stride,
-        # #                          kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32),
-        # #                          padding=conv2_pad, activation=tf.nn.elu, name=name + "_conv2")
-        # # # conv2_flat = tf.reshape(conv2, shape=[-1, conv2_fmaps*9])
-        # # pool2 = tf.layers.max_pooling1d(conv2, pool_size=pool2_size, padding="VALID", strides=pool2_stride, name=name + "_pool2")
-        # # pool2_flat = tf.reshape(pool2, shape=[-1, conv2_fmaps*5])
 
         dnn1 = tf.layers.dense(inputs, units=100, activation=tf.nn.elu,
                                kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32),
@@ -61,22 +33,16 @@ def model(inputs, is_training, name):
         dnn3 = tf.layers.dropout(dnn3, rate=0.4, training=is_training)
         dnn4 = tf.layers.dense(dnn3, units=30, activation=tf.nn.elu,
                                kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-        # dnn2 = tf.layers.dropout(dnn2, rate=0., training=is_training)
-        # dnn3 = tf.layers.dense(dnn2, units=100, activation=tf.nn.elu,
-        #                        kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-        # dnn4 = tf.layers.dense(dnn3, units=50, activation=tf.nn.elu,
-        #                        kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
         dnn5 = tf.layers.dense(dnn4, units=10, activation=tf.nn.elu,
                                kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
-        # dnn6 = tf.layers.dense(dnn5, units=30, activation=tf.nn.elu,
-        #                        kernel_initializer=tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32))
 
         return dnn5
 
 tf.reset_default_graph()
 
 hla = sys.argv[1]
-train = pd.read_csv("/ST_PRESICION/huweipeng/immunotherapy/data_clean/model/Pluto/data/%s/train.csv" % (hla), index_col=0).sample(frac=1)
+train_file = sys.argv[2]
+train = pd.read_csv(train_file, index_col=0).sample(frac=1)
 train_pos = train[train.label == 1]
 train_neg = train[train.label == 0]
 
@@ -87,7 +53,8 @@ y_train_pos = train_pos.iloc[:, -1].values.reshape(-1, 1)
 X_train_neg = train_neg.iloc[:, :-1].values
 y_train_neg = train_neg.iloc[:, :-1].values.reshape(-1, 1)
 
-dev = pd.read_csv("/ST_PRESICION/huweipeng/immunotherapy/data_clean/model/Pluto/data/%s/dev.csv" % (hla), index_col=0).sample(frac=1)
+dev_file = sys.argv[3]
+dev = pd.read_csv(dev_file, index_col=0).sample(frac=1)
 X_dev = dev.iloc[:, :-1].values
 y_dev = dev.iloc[:, -1].values.reshape(-1, 1)
 
@@ -99,13 +66,12 @@ n_outputs = 1
 
 
 X = tf.placeholder(tf.float32, shape=(None, n_inputs), name="X")
-X_reshaped = tf.reshape(X, shape=(-1, length, channels), name="reshape_X")
 y = tf.placeholder(tf.int32, shape=(None, 1), name="y")
 
 is_training = tf.placeholder_with_default(False, shape=(), name="training")
 
 
-outputs = model(X, is_training, name="CNN_A")
+outputs = model(X, is_training, name="DNN_A")
 frozen_outputs = tf.stop_gradient(outputs)
 
 he_init = tf.contrib.layers.variance_scaling_initializer(dtype=tf.float32)
@@ -133,18 +99,18 @@ recall = tf.metrics.recall(y, y_pred)
 init = tf.global_variables_initializer()
 local_init = tf.local_variables_initializer()
 
-dnn_A_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="CNN_A")
+dnn_A_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="DNN_A")
 restore_saver = tf.train.Saver(var_list={var.op.name: var for var in dnn_A_vars})
 saver = tf.train.Saver()
 
-n_epochs = 1001
+n_epochs = 10
 decoy_batch_size = len(X_train_pos) * 10
 
 best_ppv = np.NINF
 with tf.Session() as sess:
     init.run()
     local_init.run()
-    restore_saver.restore(sess, "./pan_model.ckpt")
+    restore_saver.restore(sess, "./model/pretrain/pretrain.ckpt")
 
     for epoch in range(n_epochs):
         for iteration in range(len(X_train_neg) // decoy_batch_size):
@@ -158,9 +124,10 @@ with tf.Session() as sess:
             ppv = calPPV(y_dev[:, 0], predict_prob)
             if ppv > best_ppv:
                 best_ppv = ppv
-                save_path = saver.save(sess, "./model/%s/pretrain/epitope_presentation_model.ckpt" % (hla))
+                # save_path = saver.save(sess, "./model/%s/pretrain/epitope_presentation_model.ckpt" % hla)
+                save_path = saver.save(sess, "./epitope_presentation_model.ckpt")
             print(epoch, "train f1 score:", f1_train)
             print(epoch, "0.1% PPV:", ppv)
 
-    with open("/ST_PRESICION/huweipeng/immunotherapy/data_clean/model/Pluto/record/pluto_performance.csv", "a") as fw:
-        fw.write("%s,%.4f\n" % (hla, best_ppv))
+    # with open("/ST_PRESICION/huweipeng/immunotherapy/data_clean/model/Pluto/record/pluto_performance.csv", "a") as fw:
+    #     fw.write("%s,%.4f\n" % (hla, best_ppv))
